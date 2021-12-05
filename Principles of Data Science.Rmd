@@ -1,0 +1,494 @@
+---
+title: "Principles of Data Science" 
+output:
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(42)
+```
+
+# Packages used | Installation and Loading
+```{r, warning=FALSE, message=FALSE}
+if(!require("factoextra")) install.packages("factoextra");
+library(factoextra)
+
+
+if(!require("olsrr")) install.packages("olsrr");
+library(olsrr)
+
+# Devtools needed for installing ggbiplot
+if(!require("devtools")) install.packages("devtools");
+library(devtools)
+# if(!require("ggbiplot")) install_github("vqv/ggbiplot");
+library(ggbiplot)
+
+if(!require("GGally")) install.packages("GGally");
+library(GGally)
+
+if(!require("ggplot2")) install.packages("ggplot2");
+library(ggplot2)
+
+if(!require("reshape2")) install.packages("reshape2");
+library(reshape2)
+
+if(!require("dplyr")) install.packages("dplyr");
+library(dplyr)
+```
+
+
+# Dataset
+The dataset used in this portfolio consists of an `id` number, `age` (years), `weight` (kg), `height` (cm), and `gender`, for 80 physically active humans, together with seven body girth measurements (cm): `shoulder`, `hip`, `thigh`, `bicep`, `knee`, `ankle`, and `wrist`. There are no missing values in the dataset. The Aim of this Portfolio is to investigate using these body girth
+measurements in order to predict `weight` and `height`. Throughout this Portfolio, we will every opportunity to investigate the effect of gender on whatever is being investigated.
+
+```{r, warning=FALSE, message=FALSE}
+body_sample <- read.csv("body_sample.csv")
+head(body_sample)
+summary(body_sample)
+```
+
+
+# Task 1 — Multivariate Statistical Analysis
+
+Firstly, we will sort the rows of the dataset, first by gender and then weight (within gender).
+
+```{r, warning=FALSE, message=FALSE}
+sorted_body_sample <- body_sample %>%
+  arrange(gender, weight)
+head(sorted_body_sample)
+```
+
+## (1). Using R to carry out Principal Component Analysis (PCA) using only the seven body girth measurements.
+
+```{r cars}
+body_sample.pca <- prcomp(sorted_body_sample[, 6:12])
+summary(body_sample.pca)
+```
+
+### Including Plots
+
+screeplot, biplot, and loadings plot (loadings variable is included in the biplot)
+
+```{r, warning=FALSE, message=FALSE}
+body_sample.pca %>%
+  ggbiplot()
+```
+
+The selected seven body girth measurements have resulted to 7 principal components, that is, PC1 - PC7 each explaining the percentage of variation in the dataset. standardized PC1 explained 74.8% of total variance, PC2 explained 21% hence PC1 and PC2 can explain `r 74.8+21`% of the variance.
+
+`shoulder` and `hip` variables all contributes to PC1 the arrows indicated in the biplot shows these variables moving the samples to the right of the plot past 1 vertically.
+
+```{r}
+# Visualize eigenvalues/variances
+fviz_screeplot(body_sample.pca, addlabels = TRUE)
+```
+From the scree plot it is evident that PC1 contributes 74.8% followed by PC2 which contributes 21%.
+
+### a biplot using PC2 and PC3 as the axes
+
+```{r, warning=FALSE, message=FALSE}
+body_sample.pca %>%
+  ggbiplot(choices = 2:3)
+```
+`bicep`, `shoulder`, `ankle` and `wrist` contribute to PC2, with higher values of these variables moving the samples to the right of PC2 vs PC3 biplot. `hip` is contributing to PC3
+
+From both plots, we can see that the `shoulder` variable is contributing to both PC1 and PC2, the `hip` variable is contributing to PC1 and PC3. other variables have smaller contribution to PCs
+
+## (2). Carrying out Cluster Analysis on the dataset using hierarchical clustering on the seven body girth measurements.
+
+Before performing the cluster analysis, we need to find the optimal number of clusters that will be used to cut the tree.
+
+```{r}
+# Determine the optimal number of clusters and plot
+sorted_body_sample[,6:12] %>%
+  fviz_nbclust(kmeans, method = "silhouette")
+```
+4 is the optimal number of cluster, we will use it to compute hierarchical clustering and cut tree.Since we are performing based on the seven body girth measurements, we will not scale the data because all measurements are of one unit of measurement.
+
+```{r, warning=FALSE, message=FALSE}
+# Compute hierarchical clustering on seven body girth measurements
+body_sample.hcut <- hcut(sorted_body_sample[,6:12], k=4)
+
+# Visualize the dendogram
+fviz_dend(
+  body_sample.hcut,
+  rect = T,
+  cex = .4
+)
+```
+
+`hcut()` function computes hierarchical clustering and cut the tree into specified clusters (2 by default). Here we used 4 clusters, the rounded rectangles are the yielded clusters, by default `hcut()` used the *eucliden* distance metric.
+
+### Cluster the people and body girth measurements separately
+
+We have already created cluster for body girth measurements, below we will cluster the *people*. We will first check for the optimal clusters
+
+```{r}
+
+# Determine the optimal number of clusters and plot
+sorted_body_sample[,1:5] %>%
+  # Encode gender with an integer 1 for male and 2 for females
+  mutate(gender_int=ifelse(gender=="m",1,2))%>%
+  # remove the text gender columns
+  select(-gender)%>%
+  # Change gender column to factor
+  fviz_nbclust(kmeans, method = "silhouette")
+```
+2 is the optimal number of clusters.
+
+```{r, warning=FALSE, message=FALSE}
+# Compute hierarchical clustering on seven body girth measurements
+body_sample.hcut <- # Determine the optimal number of clusters and plot
+sorted_body_sample[,1:5] %>%
+  # Encode gender with an integer 1 for male and 2 for females
+  mutate(gender_int=ifelse(gender=="m",1,2))%>%
+  # remove the text gender columns
+  select(-gender)%>%
+  hcut(k=2, stand=T)
+
+# Visualize the dendogram
+fviz_dend(
+  body_sample.hcut,
+  rect = T,
+  cex = .4
+)
+```
+This has resulted to 2 clusters, this may be based on a persons gender, or age group with a 20 distance of merge.
+
+### Cluster analysis including age, weight, height
+
+```{r}
+# Determine the number of clusters
+sorted_body_sample %>%
+  # Encode gender with an integer 1 for male and 2 for females
+  mutate(gender_int=ifelse(gender=="m",1,2))%>%
+  # remove the text gender columns
+  select(-gender)%>%
+  # Change gender column to factor
+  fviz_nbclust(kmeans, method = "silhouette")
+  
+```
+
+Using all variables results to 2 clusters, we will use the optimal clusters to plot the hierarchical clustering.
+
+```{r, warning=FALSE, message=FALSE}
+# Compute hierarchical clustering on seven body girth measurements
+body_sample.hcut <- sorted_body_sample %>%
+  # Encode gender with an integer 1 for male and 2 for females
+  mutate(gender_int=ifelse(gender=="m",1,2))%>%
+  # remove the text gender columns
+  select(-gender)%>%
+  hcut(k=2, stand=T)
+
+# Visualize the dendogram
+fviz_dend(
+  body_sample.hcut,
+  rect = T,
+  cex = .4
+)
+```
+From the dendogram, we can see the groupings generated with 25 distance of split. From all the clustering, it is evident that with seven body girth measurement gives 4 clustering the distance of merge for the seven body girth measurements was 150.
+
+## (3)  assess the methods applied and insights gained
+
+The PCA, Principal Component Analysis assisted in visualizing the variations present in body girth measurements, from PCA the 1 dimensions contributed over 74%, the variables resulting to this where `shoulder`, `hip` and `thigh` contributing the highest variations.
+
+Clustering helped in identifying the groupings available in the dataset.
+This was the findings:
+
+* 4 groups: with the seven body girth
+* 2 groups: the people
+* 2 groups using all the variables
+
+With all these, it is evident that there can be a hidden pattern in the dataset that is formed with as a result of the variables. there are 4 different groups that have different characteristics formed by the seven body girth measurements.
+
+# Task 2— Exploratory Data Analysis and Linear Models
+
+The aim is to use the seven body girth measurements to predict body weight and body height using linear models (regression) in R. We are primarily concerned with critically assessing any linear models proposed, and with *model selection* (which predictors to include in any final linear models recommended).
+
+## (2) Using R to build a *scatter matrix* using `ggpairs()`.
+
+```{r, warning=FALSE, message=FALSE, fig.cap="Body Sample Scatter Matrix"}
+sorted_body_sample %>%
+  select(-id, -gender) %>%
+  ggpairs(
+    aes(colour=sorted_body_sample$gender), 
+    progress = FALSE,
+    legend=1
+  ) +
+  theme(legend.position = "bottom")
+```
+From the scatter matrix above we can see that:
+
+1. There is a strong correlation between:
+  * `thigh` and `hip`: 0.912
+  * `wrist` and `ankle`: 0.775
+  * `wrist` and `knee`: 0.7
+  * `wrist` and `bisep`: 0.842
+  * `wrist` and `shoulder`: 0.836
+  * `wrist` and `weight`: 0.83
+  * `ankle` and `weight`: 0.843 among others
+2. Week Correlations is witnessed between:
+  * `height` and `age`
+  * `hip` and `height`
+  * `thigh` and `height`
+
+Looking at the `hip` and `shoulder` relationship, we can see a moderate positive correlation of 0.566 but female have a stronger positive correlation of `hip`-`shoulder` of 0.758 as compared to males whose correlation is 0.640. It is not sufficiently enough to state that `hip` and `shoulder` can sufficient to identify `gender`.
+
+## (2) single-predictor linear model “best” predicts body weight and which single-predictor linear model “best” predicts body height
+
+```{r}
+# Create model to predict weight using body girth measurements
+lr_weight <- lm(
+  weight ~ shoulder + hip + thigh + bicep + knee + ankle + wrist,
+  data = sorted_body_sample
+)
+
+# Create model to predict height using body girth measurements
+lr_height <- lm(
+  height ~ shoulder + hip + thigh + bicep + knee + ankle + wrist,
+  data = sorted_body_sample
+)
+
+# Check the summaries of the models
+summary(lr_weight)
+summary(lr_height)
+```
+
+To select single-predictor linear model that best predicts body weight and best predict linear model we will perform an all possible regression that involves all subset regression test for all the seven body girth measurements and select one single predictor that has the largest $R^2$ and also small Mean Squared Error.
+
+### Single predictorlinear model which best predicts body weight.
+
+The model used is `lr_weight`
+
+```{r}
+best_predictor_weight <- lr_weight %>%
+  ols_step_best_subset()
+best_predictor_weight
+```
+
+The single-predict linear model that best predict body weight will have `bicep` as the independent predictor. The plot below shows how fit criterion was done.
+
+```{r}
+plot(best_predictor_weight)
+```
+
+### Single predictorlinear model which best predicts body heigth
+
+The model used is `lr_height`
+
+```{r}
+best_predictor_height <- lr_height %>%
+  ols_step_best_subset()
+best_predictor_height
+```
+
+The single-predict linear model that best predict body weight will have `wrist` as the independent predictor. The plot below shows how fit criterion was done.
+
+```{r}
+plot(best_predictor_height)
+```
+
+
+## (3) AIC
+
+The acronym AIC stands for Akaike information criterion, this is a regression metric used for comparing how well several regression models approximate a target function (or fit). The best model explains the highest variation using very few features.
+
+Considering only the seven body girth measurements, we will perform the `ols_step_subest` which selects the subset of predictors that do best fit wile having largest $R^2$ or smallest mean squared error, we will use it to determine what two-predictor and four-predictor linear models to recommend to predict body weight and body height.
+
+```{r}
+# Create a multitarget linear model with seven body girth measurements
+lr_weight_model <- lm(
+  weight ~ shoulder + hip + thigh + bicep + knee + ankle + wrist,
+  data = sorted_body_sample
+)
+lr_height_model <- lm(
+  height ~ shoulder + hip + thigh + bicep + knee + ankle + wrist,
+  data = sorted_body_sample
+)
+# print summaries of the models
+summary(lr_weight_model)
+summary(lr_height_model)
+```
+```{r}
+lr_weight_model %>% 
+  ols_step_both_aic(
+    details = T
+  )
+```
+
+* The two- predictors for weight are:`bicep` + `knee` with an AIC of 472.8764
+* The four-predictors for weight are: `bicep` + `knee` + `shoulder` + `hip` with an AIC of  438.4734
+
+```{r}
+lr_height_model %>%
+  ols_step_both_aic(details = T)
+```
+
+* The two- predictors for height are: `wrist` + `thigh` with an AIC of  533.6404
+* The four-predictors for height are: **No more variables were to be added or removed.** hence stopped at 3.
+
+### Compare these models with the best linear models using body girth measurements from the legs and arms only, i.e., not including `shoulder` and `hip`. 
+We will create more models covering only 5 features, without including `shoulder` and `hip`.
+
+```{r}
+# New weight model
+lr_weight_new <- lm(
+  weight ~ thigh + bicep + knee + ankle + wrist,
+  data = sorted_body_sample
+)
+# New height model
+lr_height_new <- lm(
+  height ~ thigh + bicep + knee + ankle + wrist,
+  data = sorted_body_sample
+)
+
+## Summaries
+summary(lr_weight_new)
+summary(lr_height_new)
+```
+
+#### weight predictors using body girth measurements from legs and arms only
+
+```{r}
+lr_weight_new %>% 
+  ols_step_both_aic(
+    details = T
+  )
+```
+
+* The two- predictors for weight are:  `bicep` + `knee` with an AIC of   472.8764
+* The four-predictors for weight are: `bicep` + `knee` + `ankle` + `thigh` with an AIC of 462.4624
+
+#### height predictors using body girth measurements from legs and arms only
+
+```{r}
+lr_height_new %>% 
+  ols_step_both_aic(
+    details = T
+  )
+```
+
+* The two- predictors for height are:  `wrist` + `thigh` with an AIC of  533.6404
+* The four-predictors for height are: **No more variables were to be added or removed.** hence stopped at 3.
+
+### Comparing best models using only body girth measurements as predictors with the linear best models including any of the available predictors.
+
+```{r}
+# Using all predictors
+lr_weight_all <- lm(
+  weight ~ .,
+  data = sorted_body_sample
+)
+# Predict height using all predictors
+lr_height_all <- lm(
+  height ~ .,
+  data = sorted_body_sample
+)
+```
+
+Check the AIC of weight using all predictors
+
+```{r}
+AIC(lr_weight_all)
+```
+Check the AIC of height using all predictors
+```{r}
+AIC(lr_height_all)
+```
+
+### Summarising the results from  best linear models in a small table.
+
+| Model Name | Model Description | AIC |
+|---|---|---|
+|`lr_weight_model`|The two- predictors for weight are:bicep + knee| 472.8764|
+|`lr_weight_model`|The four-predictors for weight are: bicep + knee + shoulder + hip| 438.4734|
+|`lr_height_model`|The two- predictors for height are: wrist + thigh| 533.6404|
+|`lr_height_model`|No more variables were to be added or removed. hence stopped at stepwise 3.||
+|`lr_weight_new`|using body girth measurements from the legs and arms only, i.e., not including shoulder and hip. The two- predictors for weight are: bicep + knee|472.8764|
+|`lr_weight_new`|using body girth measurements from the legs and arms only, i.e., not including shoulder and hip. The four-predictors for weight are: bicep + knee + ankle + thigh|462.4624|
+|`lr_height_new`|using body girth measurements from the legs and arms only, i.e., not including shoulder and hip. The two- predictors for height are: wrist + thigh| 533.6404|
+|`lr_height_new`|using body girth measurements from the legs and arms only, i.e., not including shoulder and hip.The four-predictors for height are: No more variables were to be added or removed. hence stopped at 3.||
+|`lr_weight_all`|Use all predictors|409.6935|
+|`lr_height_all`|Use all predictors| 511.717|
+
+From the model summaries, using all the predictors results to a model with lower Akaike Information Criterion hence better models to predict weight and height.
+
+## (4) Linear model using `shoulder` and `hip` to predict weight (model A) and the linear model using the other five body firth measurements to predict weight (model B).
+
+```{r}
+# model A uses shoulder and hip
+model.A <- lm(
+  weight ~ shoulder+hip,
+  data = sorted_body_sample
+)
+
+# model B users other 5 body girth measurements
+model.B <- lm(
+  weight ~ thigh + bicep + knee + ankle + wrist,
+  data = sorted_body_sample
+)
+```
+
+### Comparing the residuals from these two models for each individual in the dataset
+
+In order to compare the residuals of these two models, we will create a dataframe that will assist in comparison, then check the summary using `summary()` function.
+
+```{r}
+# Create model residuals
+models.resids <- data.frame(
+  model_A_residuals=residuals(model.A),
+  model_B_residuals=residuals(model.B)
+)
+
+# Check the summary of the created dataframe to compare residuals
+summary(models.resids)
+```
+
+From summary statistics, we can see that there is a small negligable change between the models. We will check the summary of the models to see how each model is performing
+
+```{r}
+summary(model.A)
+summary(model.B)
+```
+Model B has a higher Multiple $R^2$ than model A, both models have same p-values.
+
+### customised plot where the residuals from the two models is given on the vertical axis, body weight is given on the horizontal axis, and residuals from each individual are somehow linked in the plot.
+
+Since all are numerics, a scatterplot will be the most effective plot to plot here. We will create a dataframe that contains linked points of residuals, and weight as they appear in individuals
+
+```{r}
+# Create a dataframe contating weight and models residuals
+models_weight_resids <- data.frame(
+  weight=sorted_body_sample$weight,
+  model_A_residuals = residuals(model.A),
+  model_B_residuals = residuals(model.B)
+)
+# develop a customized plot
+models_weight_resids %>%
+  melt(id.vars="weight") %>%
+  ggplot(aes(weight, value, colour=variable))+
+  geom_point()+
+  scale_colour_manual(values=c("red", "blue")) +
+  ggtitle("model A and B residuals VS Weight
+          .")
+```
+From this plot we can see that model B residuals are majorly higher than model A residuals in every weight except for first minimum and last maximum weights.
+
+## (5) Assessing conclusions from fitting linear models and drawing comparisons with the results from PCA and Cluster Analysis
+
+Using all predictors has yielded better models this was seen from the AIC generated by different models tested, therefore the future medical organizers need to collect accurate measurements that can be used to predict `weight` and `height`. 
+From this portfolio generally Supervised Machine Learning (fitting linear models) gives better results than PCA and Cluster Analysis. The Cluster Analysis was harder to determine the prevailing clusters that may be formed by seven body girth measurements. 
+Clustering assisted in determining the hidden pattern in the dataset. 
+With all these, it is evident that there can be a hidden pattern in the dataset that is formed with as a result of the variables. there are 4 different groups that have different characteristics formed by the seven body girth measurements
+
+The PCA, Principal Component Analysis assisted in visualizing the variations present in body girth measurements, from PCA the 1 dimensions contributed over 74%, the variables resulting to this where `shoulder`, `hip` and `thigh` contributing the highest variations.
+
+Clustering helped in identifying the groupings available in the dataset.
+This was the findings:
+
+* 4 groups: with the seven body girth
+* 2 groups: the people
+* 2 groups using all the variables
